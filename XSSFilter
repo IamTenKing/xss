@@ -1,0 +1,50 @@
+import javax.servlet.*;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+
+import org.apache.commons.httpclient.Cookie;
+
+import java.io.IOException;
+
+public class XSSFilter extends BaseFilter {
+
+    @Override
+    public void init() throws ServletException {
+        FilterConfig chain = getConfig();
+    }
+
+    @Override
+    public void doFilter(HttpServletRequest request, HttpServletResponse response, FilterChain chain) throws IOException, ServletException {
+        chain.doFilter(request, response);
+
+    }
+
+    @Override
+    public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain) throws IOException, ServletException {
+    	  HttpServletRequest httpRequest = (HttpServletRequest) request;
+          HttpServletResponse httpResponse = (HttpServletResponse) response;
+          String requestURI = httpRequest.getRequestURI();
+          String method = httpRequest.getParameter("method");
+        
+          if ("/xxxx".equalsIgnoreCase(requestURI)) {
+        	   	//设置HTTPONLY为true,防止XSS攻击
+        	  System.out.println(requestURI);
+          	for (javax.servlet.http.Cookie cookie2 : httpRequest.getCookies()) {
+      			if (cookie2.getName().toUpperCase().equals("JSESSIONID")) {
+      				cookie2.setHttpOnly(true);
+      			}
+      		}
+          	//使用csp预防xss
+          	 httpResponse.setHeader("Content-Security-Policy", "default-src 'self';");
+          	 super.doFilter(new XSSRequestWrapper(httpRequest), httpResponse, chain);
+          	// chain.doFilter(httpRequest, httpResponse);
+		
+          }   
+          else{
+			
+			 chain.doFilter(request, response);
+
+		}
+    }
+
+}

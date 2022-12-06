@@ -1,0 +1,182 @@
+Spring整合的方式
+
+/**
+ * 解决XSS跨站脚本攻击和sql注入攻击,使用spring的HtmlUtils,可以使用StringEscapeUtils 中的过滤方法
+ */
+public class XssSpringHttpServletRequestWrapper extends HttpServletRequestWrapper{
+
+    public XssSpringHttpServletRequestWrapper(HttpServletRequest request) {
+        super(request);
+    }
+
+    /**
+     * 对数组参数进行特殊字符过滤
+     */
+    @Override
+    public String[] getParameterValues(String name) {
+        String[] values = super.getParameterValues(name);
+        String[] newValues = new String[values.length];
+        for (int i = 0; i < values.length; i++) {
+            //spring的HtmlUtils进行转义
+            newValues[i] = HtmlUtils.htmlEscape(values[i]);
+        }
+        return newValues;
+    }
+
+    /**
+     * 拦截参数,并对其进行字符转义
+     */
+    @Override
+    public String getParameter(String name) {
+        return HtmlUtils.htmlEscape(name);
+    }
+
+    /**
+     * 拦截参数,并对其进行字符转义
+     */
+    @Override
+    public Object getAttribute(String name) {
+        return HtmlUtils.htmlEscape(name);
+    }
+
+2、实现XSS过滤器
+/**
+ * spring方式xss过滤器
+ */
+public class XssSpringFilter implements Filter{
+
+    @Override
+    public void init(FilterConfig filterConfig) throws ServletException {
+
+    }
+
+    @Override
+    public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain)
+            throws IOException, ServletException {
+        HttpServletRequest req = (HttpServletRequest) request;
+        chain.doFilter(new XssSpringHttpServletRequestWrapper(req), response);
+    }
+
+    @Override
+    public void destroy() {
+
+    }
+
+}
+3、配置XSS过滤器
+
+<!-- spring方式的xss过滤器 -->
+<filter>
+    <filter-name>xssSpringFilter</filter-name>
+    <filter-class>cn.aric.xss.XssSpringHttpServletRequestWrapper</filter-class>
+</filter>
+<filter-mapping>
+    <filter-name>xssSpringFilter</filter-name>
+    <url-pattern>/*</url-pattern>
+</filter-mapping>
+--------------------- 
+作者：宏微 
+来源：CSDN 
+原文：https://blog.csdn.net/shuaicihai/article/details/76099805 
+版权声明：本文为博主原创文章，转载请附上博文链接！
+
+Java 防止 xss攻击
+这里说下最近项目中我们的解决方案，主要用到commons-lang3-3.1.jar这个包的org.apache.commons.lang3.StringEscapeUtils.escapeHtml4()这个方法。
+解决过程主要在用户输入和显示输出两步：在输入时对特殊字符如<>" ' & 转义，在输出时用jstl的fn:excapeXml("fff")方法。
+其中，输入时的过滤是用一个filter来实现，
+实现过程：
+在web.xml加一个filter
+Xml代码  
+收藏代码
+<filter>  
+        <filter-name>XssEscape</filter-name>  
+        <filter-class>cn.pconline.morden.filter.XssFilter</filter-class>  
+    </filter>  
+    <filter-mapping>  
+        <filter-name>XssEscape</filter-name>  
+        <url-pattern>/*</url-pattern>  
+        <dispatcher>REQUEST</dispatcher>  
+    </filter-mapping>  
+XssFilter 的实现方式是实现servlet的Filter接口
+Java代码  
+收藏代码
+package cn.pconline.morden.filter;  
+  
+import java.io.IOException;  
+  
+import javax.servlet.Filter;  
+import javax.servlet.FilterChain;  
+import javax.servlet.FilterConfig;  
+import javax.servlet.ServletException;  
+import javax.servlet.ServletRequest;  
+import javax.servlet.ServletResponse;  
+import javax.servlet.http.HttpServletRequest;  
+  
+public class XssFilter implements Filter {  
+      
+    @Override  
+    public void init(FilterConfig filterConfig) throws ServletException {  
+    }  
+  
+    @Override  
+    public void doFilter(ServletRequest request, ServletResponse response,  
+            FilterChain chain) throws IOException, ServletException {  
+        chain.doFilter(new XssHttpServletRequestWrapper((HttpServletRequest) request), response);  
+    }  
+  
+    @Override  
+    public void destroy() {  
+    }  
+}  
+ 关键是XssHttpServletRequestWrapper的实现方式，继承servlet的HttpServletRequestWrapper，并重写相应的几个有可能带xss攻击的方法，如：
+Java代码  
+收藏代码
+package cn.pconline.morden.filter;  
+  
+import javax.servlet.http.HttpServletRequest;  
+import javax.servlet.http.HttpServletRequestWrapper;  
+  
+import org.apache.commons.lang3.StringEscapeUtils;  
+  
+public class XssHttpServletRequestWrapper extends HttpServletRequestWrapper {  
+  
+    public XssHttpServletRequestWrapper(HttpServletRequest request) {  
+        super(request);  
+    }  
+  
+    @Override  
+    public String getHeader(String name) {  
+        return StringEscapeUtils.escapeHtml4(super.getHeader(name));  
+    }  
+  
+    @Override  
+    public String getQueryString() {  
+        return StringEscapeUtils.escapeHtml4(super.getQueryString());  
+    }  
+  
+    @Override  
+    public String getParameter(String name) {  
+        return StringEscapeUtils.escapeHtml4(super.getParameter(name));  
+    }  
+  
+    @Override  
+    public String[] getParameterValues(String name) {  
+        String[] values = super.getParameterValues(name);  
+        if(values != null) {  
+            int length = values.length;  
+            String[] escapseValues = new String[length];  
+            for(int i = 0; i < length; i++){  
+                escapseValues[i] = StringEscapeUtils.escapeHtml4(values[i]);  
+            }  
+            return escapseValues;  
+        }  
+        return super.getParameterValues(name);  
+    }  
+      
+}  
+到此为止，在输入的过滤就完成了。
+ 
+在页面显示数据的时候，只是简单地用fn:escapeXml()对有可能出现xss漏洞的地方做一下转义输出。
+复杂内容的显示，具体问题再具体分析。
+ 
+另外，有些情况不想显示过滤后内容的话，可以用StringEscapeUtils.unescapeHtml4()这个方法，把StringEscapeUtils.escapeHtml4()转义之后的字符恢复原样。
